@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ocafitsfiles"
+version = "0.1.0"
+description = "Python library for working with OCA FITS file system structure"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+    { name = "MKA" },
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: GNU Lesser General Public License v3 (LGPLv3)",
+    "Operating System :: OS Independent",
+    "Topic :: Scientific/Engineering :: Astronomy",
+]
+dependencies = []
+
+[tool.setuptools]
+py-modules = ["ocafitsfiles"]
+
