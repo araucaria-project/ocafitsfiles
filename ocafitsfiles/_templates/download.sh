@@ -155,26 +155,68 @@ ensure_token() {
 
 fetch_presigned_url() {
   # GET {API_ENDPOINT}/by-filename/{key}/plainurl?expires_in={EXPIRES_IN}
+  # Return codes:
+  #   0  success (url on stdout)
+  #  44  key not found in API (404)
+  #  41  unauthorized (401, token expired)
+  #  >0  other error
   key="$$1"
+  _body=""
+  _http_code=""
 
   if [ "$$DL_TOOL" = "curl" ]; then
-    curl -fsS -X GET --max-time "$$DL_TIMEOUT" \
+    _body="$$(curl -sS -w '\n__HTTP_CODE__:%{http_code}' -X GET --max-time "$$DL_TIMEOUT" \
       -H "Authorization: Bearer $$API_TOKEN" \
       -H "Content-Type: application/json" \
       --data '' \
-      "$$API_ENDPOINT/by-filename/$$key/plainurl?expires_in=$$EXPIRES_IN" \
-      | strip_quotes
+      "$$API_ENDPOINT/by-filename/$$key/plainurl?expires_in=$$EXPIRES_IN" 2>/dev/null)"
+    _rc=$$?
   else
-    wget -qO- --timeout="$$DL_TIMEOUT" \
+    # wget doesn't give us HTTP code easily; fallback to simpler detection
+    _body="$$(wget -qO- --timeout="$$DL_TIMEOUT" \
       --header="Authorization: Bearer $$API_TOKEN" \
       --header="Content-Type: application/json" \
-      "$$API_ENDPOINT/by-filename/$$key/plainurl?expires_in=$$EXPIRES_IN" \
-      | strip_quotes
+      "$$API_ENDPOINT/by-filename/$$key/plainurl?expires_in=$$EXPIRES_IN" 2>/dev/null)"
+    _rc=$$?
   fi
+
+  [ $$_rc -eq 0 ] || return 11
+
+  # Extract HTTP code from curl footer
+  _http_code="$$(printf '%s' "$$_body" | grep '^__HTTP_CODE__:' | sed 's/^__HTTP_CODE__://')"
+  _body="$$(printf '%s' "$$_body" | sed '/^__HTTP_CODE__:/d')"
+
+  [ -n "$$_body" ] || return 12
+
+  # Check HTTP status
+  case "$$_http_code" in
+    401) return 41 ;;
+    404) return 44 ;;
+  esac
+
+  # API detail='... not found' for unknown filenames
+  if printf '%s' "$$_body" | grep -qi 'not found'; then
+    return 44
+  fi
+
+  _url="$$(printf '%s' "$$_body" | strip_quotes)"
+  case "$$_url" in
+    http://*|https://*)
+      printf '%s' "$$_url"
+      return 0
+      ;;
+  esac
+
+  return 13
 }
 
 fetch_presigned_url_with_retry() {
-  # Fetch presigned URL; on failure, re-login once and retry.
+  # Fetch presigned URL; retry once after re-login ONLY on 401.
+  # Return codes:
+  #   0  success
+  #  44  key not found in API
+  #  45  object missing in store
+  #  >0  other failure
   _key="$$1"
   _url="$$(fetch_presigned_url "$$_key" 2>/dev/null)"
   _rc=$$?
@@ -182,26 +224,41 @@ fetch_presigned_url_with_retry() {
     printf '%s' "$$_url"
     return 0
   fi
-  # Retry after re-login
-  login || return 1
+  if [ $$_rc -eq 44 ]; then
+    return 44
+  fi
+
+  # Retry ONLY on 401 (token expired)
+  if [ $$_rc -ne 41 ]; then
+    return $$_rc
+  fi
+
+  login || return 21
   _url="$$(fetch_presigned_url "$$_key" 2>/dev/null)"
   _rc=$$?
   if [ $$_rc -eq 0 ] && [ -n "$$_url" ]; then
     printf '%s' "$$_url"
     return 0
   fi
-  return 1
+  if [ $$_rc -eq 44 ]; then
+    return 44
+  fi
+
+  return $$_rc
 }
 
 check_object_exists() {
   # Verify object is accessible via a minimal GET (1 byte).
   # HEAD is not used because some S3-compatible stores (e.g. Backblaze B2)
   # reject HEAD on presigned URLs signed for GET only.
+  # Return: 0 if exists, 45 if missing in store
   url="$$1"
   if [ "$$DL_TOOL" = "curl" ]; then
-    curl -fsSo /dev/null -r 0-0 --max-time "$$DL_TIMEOUT" "$$url" 2>/dev/null
+    curl -fsSo /dev/null -r 0-0 --max-time "$$DL_TIMEOUT" "$$url" 2>/dev/null && return 0
+    return 45
   else
-    wget -qO /dev/null --header="Range: bytes=0-0" --timeout="$$DL_TIMEOUT" "$$url" 2>/dev/null
+    wget -qO /dev/null --header="Range: bytes=0-0" --timeout="$$DL_TIMEOUT" "$$url" 2>/dev/null && return 0
+    return 45
   fi
 }
 
@@ -322,8 +379,12 @@ active_lines | while IFS= read -r line; do
     url="$$(fetch_presigned_url_with_retry "$$key")"
     rc=$$?
     if [ $$rc -ne 0 ] || [ -z "$$url" ]; then
-      printf '\n'
-      err "ERROR: API failed for '$$key'"
+      if [ $$rc -eq 44 ]; then
+        printf 'NOT FOUND IN DB\n'
+      else
+        printf 'FAILED\n'
+        err "ERROR: request failed for '$$key' (rc=$$rc)"
+      fi
       _fail=$$((_fail + 1))
       printf '%s %s %s\n' "$$_ok" "$$_fail" "$$_skip" > "$$_cnt"
       continue
@@ -336,8 +397,12 @@ active_lines | while IFS= read -r line; do
       _ok=$$((_ok + 1))
     else
       dlrc=$$?
-      printf '\n'
-      err "ERROR: download failed for '$$key' (rc=$$dlrc)"
+      if [ $$dlrc -eq 45 ]; then
+        printf 'NOT FOUND IN STORE\n'
+      else
+        printf 'FAILED\n'
+        err "ERROR: download from object store failed for '$$key' (rc=$$dlrc)"
+      fi
       rm -f "$${final}.part" >/dev/null 2>&1
       _fail=$$((_fail + 1))
     fi
@@ -347,17 +412,28 @@ active_lines | while IFS= read -r line; do
     url="$$(fetch_presigned_url_with_retry "$$key")"
     rc=$$?
     if [ $$rc -ne 0 ] || [ -z "$$url" ]; then
-      err "ERROR: API failed for '$$key'"
+      if [ $$rc -eq 44 ]; then
+        printf '%s  NOT FOUND IN DB\n' "$$key"
+      else
+        printf '%s  FAILED\n' "$$key"
+        err "ERROR: request failed for '$$key' (rc=$$rc)"
+      fi
       _fail=$$((_fail + 1))
       printf '%s %s %s\n' "$$_ok" "$$_fail" "$$_skip" > "$$_cnt"
       continue
     fi
 
-    if check_object_exists "$$url"; then
-      printf 'OK %s\n' "$$key"
+    check_object_exists "$$url"
+    _check_rc=$$?
+    if [ $$_check_rc -eq 0 ]; then
+      printf '%s  OK\n' "$$key"
       _ok=$$((_ok + 1))
+    elif [ $$_check_rc -eq 45 ]; then
+      printf '%s  NOT FOUND IN STORE\n' "$$key"
+      _fail=$$((_fail + 1))
     else
-      err "MISSING $$key"
+      printf '%s  FAILED\n' "$$key"
+      err "ERROR: object check failed for '$$key'"
       _fail=$$((_fail + 1))
     fi
   fi

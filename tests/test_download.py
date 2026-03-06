@@ -136,6 +136,10 @@ class TestRenderDownloadScript(unittest.TestCase):
         )
         self.assertIn(datetime.date.today().isoformat(), script)
 
+    def test_not_found_message_present(self):
+        script = self._render()
+        self.assertIn("NOT FOUND", script)
+
 
 class _FakeResponse:
     def __init__(self, payload: str):
