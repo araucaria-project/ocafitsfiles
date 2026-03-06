@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ocafitsfiles"
-version = "0.1.0"
+version = "0.2.0"
 description = "Python library for working with OCA FITS file system structure"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -19,6 +19,9 @@ classifiers = [
 ]
 dependencies = []
 
-[tool.setuptools]
-py-modules = ["ocafitsfiles"]
+[tool.setuptools.packages.find]
+include = ["ocafitsfiles*"]
+
+[tool.setuptools.package-data]
+"ocafitsfiles._templates" = ["*.sh"]
 

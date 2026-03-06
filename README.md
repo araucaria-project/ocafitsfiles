@@ -183,3 +183,73 @@ For calibration observations (master_z, master_d, master_f_*), `files` will also
 `source_filenames` lists direct (non-recursive) dependencies by filename only.
 Raw files have empty `source_filenames`.
 
+## Download Script Generation
+
+Library provides reusable logic to render a self-sufficient POSIX `sh` script
+for list/check/download workflows. Concrete CLIs or web apps should call this
+API and handle their own input/output.
+
+### Public symbols
+
+- `render_download_script(...)`
+- `TEMPLATE_VERSION`
+- `DEFAULT_API_ENDPOINT` (defaults to `https://api.ocadb.space/api/v1/observations`)
+
+### Render API
+
+```python
+from ocafitsfiles import render_download_script
+
+script = render_download_script(
+    data_block="""\
+zb08c_0908_71833.fits |science|54.0
+# commented rows are ignored by -l/-c/-d/-D
+""",
+    api_token="<bearer token>",
+    # optional:
+    # api_endpoint="https://api.ocadb.space/api/v1/observations",
+    # expires_in=604800,  # 7 days (S3-compatible max)
+    # dl_timeout=300,
+)
+```
+
+Parameters:
+
+- `data_block`: embedded table text; first whitespace-separated column is the key/filename
+- `api_token`: bearer token embedded into generated script
+- `api_endpoint`: base API URL; script calls `/by-filename/{key}/plainurl?expires_in=...`
+- `expires_in`: presigned URL validity in seconds (default `604800`)
+- `dl_timeout`: curl/wget transfer timeout in seconds (default `300`)
+
+### Generated script behavior
+
+The generated script supports:
+
+- `-l` list active keys (first column)
+- `-L` print full embedded table
+- `-c` check object availability
+- `-d [DIR]` download missing files to `DIR`
+- `-D [DIR]` download with overwrite
+
+Implementation notes:
+
+- Presigned URL API response may be returned as a quoted string; template strips surrounding quotes.
+- Check mode uses a minimal range GET (`bytes=0-0`) instead of HEAD for better compatibility with some S3-compatible backends.
+- Script prints a final summary (`ok/fail/skip`) and exits non-zero if failures occurred in check/download modes.
+
+### Quick local template testing
+
+Without a separate CLI project, you can iterate locally via module runner:
+
+```bash
+cat my_data_block.txt | python -m ocafitsfiles.download_script \
+  --token '<TOKEN>' \
+  --endpoint 'https://api.ocadb.space/api/v1/observations' \
+  --expires-in 604800 \
+  --dl-timeout 300 > out.sh
+
+sh out.sh -l
+sh out.sh -c
+```
+
+This runner is intended for development/testing convenience inside this library repo.
