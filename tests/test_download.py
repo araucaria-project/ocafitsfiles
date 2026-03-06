@@ -1,5 +1,15 @@
+import io
 import unittest
-from ocafitsfiles import render_download_script, TEMPLATE_VERSION, DEFAULT_API_ENDPOINT
+from unittest.mock import patch
+from urllib.error import HTTPError, URLError
+
+from ocafitsfiles import (
+    DEFAULT_API_ENDPOINT,
+    DEFAULT_AUTH_ENDPOINT,
+    TEMPLATE_VERSION,
+    fetch_user_token,
+    render_download_script,
+)
 
 
 class TestRenderDownloadScript(unittest.TestCase):
@@ -7,10 +17,12 @@ class TestRenderDownloadScript(unittest.TestCase):
     def _render(self, **kwargs):
         defaults = dict(
             data_block="file1.fits  extra\nfile2.fits  extra2",
+            username="testuser",
             api_endpoint="https://api.ocadb.space/api/v1/observations",
-            api_token="tok_secret123",
+            auth_endpoint="https://api.ocadb.space/api/v1/auth/plaintoken/",
             expires_in=3600,
             dl_timeout=60,
+            generated_date="2026-03-06",
         )
         defaults.update(kwargs)
         return render_download_script(**defaults)
@@ -25,7 +37,7 @@ class TestRenderDownloadScript(unittest.TestCase):
 
     def test_template_version_constant(self):
         self.assertIsInstance(TEMPLATE_VERSION, int)
-        self.assertGreaterEqual(TEMPLATE_VERSION, 3)
+        self.assertGreaterEqual(TEMPLATE_VERSION, 4)
 
     def test_endpoint_substituted(self):
         script = self._render(api_endpoint="https://api.ocadb.space/api/v1/observations")
@@ -35,32 +47,46 @@ class TestRenderDownloadScript(unittest.TestCase):
         script = self._render(api_endpoint="https://api.ocadb.space/api/v1/observations/")
         self.assertIn('API_ENDPOINT="https://api.ocadb.space/api/v1/observations"', script)
 
-    def test_token_substituted(self):
-        script = self._render(api_token="abc_xyz")
-        self.assertIn('API_TOKEN="abc_xyz"', script)
+    def test_username_substituted(self):
+        script = self._render(username="observer")
+        self.assertIn('USERNAME="observer"', script)
+
+    def test_auth_endpoint_substituted(self):
+        script = self._render(auth_endpoint="https://api.ocadb.space/api/v1/auth/plaintoken/")
+        self.assertIn('AUTH_ENDPOINT="https://api.ocadb.space/api/v1/auth/plaintoken/"', script)
 
     def test_expires_in_substituted(self):
-        script = self._render(expires_in=15000000)
-        self.assertIn('EXPIRES_IN="15000000"', script)
+        script = self._render(expires_in=604800)
+        self.assertIn('EXPIRES_IN="604800"', script)
 
     def test_dl_timeout_substituted(self):
         script = self._render(dl_timeout=42)
         self.assertIn('DL_TIMEOUT="42"', script)
 
+    def test_generated_date_in_header(self):
+        script = self._render(generated_date="2026-03-06")
+        self.assertIn("2026-03-06", script)
+
+    def test_n_files_computed(self):
+        script = self._render(data_block="a.fits\nb.fits\n# comment\n\nc.fits\n")
+        # 3 active lines (a.fits, b.fits, c.fits)
+        self.assertIn("3 file(s)", script)
+
+    def test_n_files_in_header_comment(self):
+        script = self._render(data_block="x.fits\ny.fits\n")
+        self.assertIn("# User: testuser | Date: 2026-03-06 | Files: 2", script)
+
     def test_data_block_embedded(self):
         script = self._render(data_block="alpha.fits\nbeta.fits\n")
-        # Data block is inside a heredoc in data_lines()
-        self.assertIn("alpha.fits\n", script)
-        self.assertIn("beta.fits\n", script)
-        # Heredoc delimiters present
-        self.assertIn("cat <<'__DATA__'", script)
-        self.assertIn("\n__DATA__\n", script)
+        self.assertIn("\n__DATA__\nalpha.fits\nbeta.fits", script)
 
     def test_no_raw_placeholders_remain(self):
         """Ensure no $word placeholders are left unsubstituted."""
         script = self._render()
-        for placeholder in ("$api_endpoint", "$api_token", "$expires_in", "$dl_timeout", "$data_block"):
-            self.assertNotIn(placeholder, script)
+        for ph in ("$api_endpoint", "$auth_endpoint", "$username",
+                    "$expires_in", "$dl_timeout", "$data_block",
+                    "$generated_date", "$n_files"):
+            self.assertNotIn(ph, script)
 
     def test_trailing_newline(self):
         script = self._render()
@@ -68,12 +94,12 @@ class TestRenderDownloadScript(unittest.TestCase):
 
     def test_empty_data_block(self):
         script = self._render(data_block="")
-        self.assertIn("cat <<'__DATA__'", script)
         self.assertIn("\n__DATA__\n", script)
+        self.assertIn("0 file(s)", script)
 
-    def test_quotes_in_token_escaped(self):
-        script = self._render(api_token='tok"with"quotes')
-        self.assertIn(r'tok\"with\"quotes', script)
+    def test_quotes_in_username_escaped(self):
+        script = self._render(username='user"name')
+        self.assertIn(r'user\"name', script)
 
     def test_fetch_url_pattern(self):
         """Generated script builds /by-filename/{key}/plainurl?expires_in= URLs."""
@@ -84,11 +110,106 @@ class TestRenderDownloadScript(unittest.TestCase):
     def test_default_endpoint(self):
         self.assertEqual(DEFAULT_API_ENDPOINT, "https://api.ocadb.space/api/v1/observations")
 
-    def test_curl_auth_header(self):
-        """curl call includes Bearer auth and Content-Type."""
+    def test_no_hardcoded_token(self):
+        """Template v4 must NOT contain a hardcoded API_TOKEN assignment."""
         script = self._render()
-        self.assertIn('Authorization: Bearer', script)
-        self.assertIn('Content-Type: application/json', script)
+        # API_TOKEN="" is the runtime init — that's fine.
+        # Ensure no API_TOKEN="<actual token>" appears.
+        for line in script.splitlines():
+            if line.startswith('API_TOKEN=') and line != 'API_TOKEN=""':
+                self.fail(f"Hardcoded token found: {line}")
+
+    def test_login_function_present(self):
+        script = self._render()
+        self.assertIn("login()", script)
+        self.assertIn("resolve_password()", script)
+        self.assertIn("ensure_token()", script)
+
+    def test_password_env_var(self):
+        script = self._render()
+        self.assertIn("OCADB_PASSWORD", script)
+
+    def test_generated_date_defaults_to_today(self):
+        import datetime
+        script = render_download_script(
+            "f.fits", username="u",
+        )
+        self.assertIn(datetime.date.today().isoformat(), script)
+
+
+class _FakeResponse:
+    def __init__(self, payload: str):
+        self._payload = payload
+
+    def read(self) -> bytes:
+        return self._payload.encode("utf-8")
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+
+class TestFetchUserToken(unittest.TestCase):
+    def test_default_auth_endpoint_constant(self):
+        self.assertEqual(DEFAULT_AUTH_ENDPOINT, "https://api.ocadb.space/api/v1/auth/plaintoken/")
+
+    @patch("ocafitsfiles._download.urlopen")
+    def test_fetch_user_token_success(self, mock_urlopen):
+        mock_urlopen.return_value = _FakeResponse('{"access_token": "abc123"}')
+
+        token = fetch_user_token("observer", "secret")
+
+        self.assertEqual(token, "abc123")
+        args, kwargs = mock_urlopen.call_args
+        req = args[0]
+        self.assertEqual(req.full_url, DEFAULT_AUTH_ENDPOINT)
+        self.assertEqual(req.get_method(), "POST")
+        self.assertEqual(kwargs["timeout"], 30)
+
+    @patch("ocafitsfiles._download.urlopen")
+    def test_fetch_user_token_http_error(self, mock_urlopen):
+        err = HTTPError(
+            url=DEFAULT_AUTH_ENDPOINT,
+            code=401,
+            msg="Unauthorized",
+            hdrs=None,
+            fp=io.BytesIO(b'{"detail": "bad credentials"}'),
+        )
+        mock_urlopen.side_effect = err
+
+        with self.assertRaises(RuntimeError) as ctx:
+            fetch_user_token("observer", "bad")
+
+        self.assertIn("HTTP 401", str(ctx.exception))
+
+    @patch("ocafitsfiles._download.urlopen")
+    def test_fetch_user_token_url_error(self, mock_urlopen):
+        mock_urlopen.side_effect = URLError("network down")
+
+        with self.assertRaises(RuntimeError) as ctx:
+            fetch_user_token("observer", "secret")
+
+        self.assertIn("network down", str(ctx.exception))
+
+    @patch("ocafitsfiles._download.urlopen")
+    def test_fetch_user_token_non_json_response(self, mock_urlopen):
+        mock_urlopen.return_value = _FakeResponse("not-json")
+
+        with self.assertRaises(RuntimeError) as ctx:
+            fetch_user_token("observer", "secret")
+
+        self.assertIn("non-JSON response", str(ctx.exception))
+
+    @patch("ocafitsfiles._download.urlopen")
+    def test_fetch_user_token_missing_access_token(self, mock_urlopen):
+        mock_urlopen.return_value = _FakeResponse('{"token_type": "bearer"}')
+
+        with self.assertRaises(RuntimeError) as ctx:
+            fetch_user_token("observer", "secret")
+
+        self.assertIn("missing access_token", str(ctx.exception))
 
 
 class TestBackwardCompatImports(unittest.TestCase):

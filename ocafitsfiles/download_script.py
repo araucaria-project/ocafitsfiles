@@ -4,10 +4,10 @@
 Usage (from project root):
 
     echo "file1.fits extra_col" | python -m ocafitsfiles.download_script \\
-        --token TEST
+        --username observer
 
     cat my_filelist.txt | python -m ocafitsfiles.download_script \\
-        --token SECRET > out.sh
+        --username observer > out.sh
 
 This is a thin wrapper around render_download_script() intended for
 quick template iteration without needing the separate CLI project.
@@ -16,7 +16,11 @@ quick template iteration without needing the separate CLI project.
 import argparse
 import sys
 
-from ocafitsfiles._download import render_download_script, DEFAULT_API_ENDPOINT
+from ocafitsfiles._download import (
+    render_download_script,
+    DEFAULT_API_ENDPOINT,
+    DEFAULT_AUTH_ENDPOINT,
+)
 
 
 def main() -> int:
@@ -25,12 +29,16 @@ def main() -> int:
         description="Render a download script (reads data block from stdin, writes script to stdout).",
     )
     parser.add_argument(
-        "--token", required=True,
-        help="API bearer token to embed.",
+        "--username", required=True,
+        help="OCADB username to embed in the script.",
     )
     parser.add_argument(
         "--endpoint", default=DEFAULT_API_ENDPOINT,
         help="Base API endpoint (default: %(default)s).",
+    )
+    parser.add_argument(
+        "--auth-endpoint", default=DEFAULT_AUTH_ENDPOINT,
+        help="Authentication endpoint (default: %(default)s).",
     )
     parser.add_argument(
         "--expires-in", type=int, default=604_800,
@@ -46,8 +54,9 @@ def main() -> int:
 
     script = render_download_script(
         data,
+        username=args.username,
         api_endpoint=args.endpoint,
-        api_token=args.token,
+        auth_endpoint=args.auth_endpoint,
         expires_in=args.expires_in,
         dl_timeout=args.dl_timeout,
     )

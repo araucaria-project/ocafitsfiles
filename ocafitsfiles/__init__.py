@@ -29,7 +29,9 @@ from ocafitsfiles._filesystem import (       # noqa: F401
 # Download script generation
 from ocafitsfiles._download import (         # noqa: F401
     DEFAULT_API_ENDPOINT,
+    DEFAULT_AUTH_ENDPOINT,
     TEMPLATE_VERSION,
+    fetch_user_token,
     render_download_script,
 )
 
@@ -48,7 +50,8 @@ __all__ = [
     "observation_dict",
     # download
     "DEFAULT_API_ENDPOINT",
+    "DEFAULT_AUTH_ENDPOINT",
     "TEMPLATE_VERSION",
+    "fetch_user_token",
     "render_download_script",
 ]
-
