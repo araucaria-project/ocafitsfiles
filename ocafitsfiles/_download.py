@@ -19,6 +19,8 @@ Template version history:
     7 - cleaner DB failure reporting with HTTP/tool context
     8 - robust 404 handling: treat missing files as NOT FOUND IN DB,
         avoid endpoint false positives, and preserve HTTP context
+    9 - progress-prefixed output: Downloading N/TOTAL and Checking N/TOTAL,
+        including SKIPPED entries
 """
 
 import json

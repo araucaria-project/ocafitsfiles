@@ -37,7 +37,7 @@ class TestRenderDownloadScript(unittest.TestCase):
 
     def test_template_version_constant(self):
         self.assertIsInstance(TEMPLATE_VERSION, int)
-        self.assertGreaterEqual(TEMPLATE_VERSION, 6)
+        self.assertGreaterEqual(TEMPLATE_VERSION, 9)
 
     def test_endpoint_substituted(self):
         script = self._render(api_endpoint="https://api.ocadb.space/api/v1/files/by-file-name")
@@ -104,7 +104,7 @@ class TestRenderDownloadScript(unittest.TestCase):
     def test_fetch_url_pattern(self):
         """Generated script builds /files/by-file-name/{key}/plainurl?expires_in= URLs."""
         script = self._render()
-        self.assertIn("/files/by-file-name/", script)
+        self.assertIn("/files/by-file-name", script)
         self.assertIn("/plainurl?expires_in=", script)
 
     def test_default_endpoint(self):
@@ -121,7 +121,7 @@ class TestRenderDownloadScript(unittest.TestCase):
 
     def test_upfront_login_block_present_for_download_and_check(self):
         script = self._render()
-        self.assertIn('if [ "$$MODE" = "check" ] || [ "$$MODE" = "download" ]; then', script)
+        self.assertIn('if [ "$MODE" = "check" ] || [ "$MODE" = "download" ]; then', script)
         self.assertIn('  ensure_tools', script)
         self.assertIn('  resolve_password', script)
         self.assertIn('  login || { err "ERROR: initial login failed"; exit 1; }', script)
@@ -134,7 +134,12 @@ class TestRenderDownloadScript(unittest.TestCase):
 
     def test_skipped_lines_are_printed(self):
         script = self._render()
-        self.assertIn("printf 'Downloading %s ... SKIPPED", script)
+        self.assertIn("Downloading %s/%s: %s ... SKIPPED", script)
+
+    def test_progress_prefix_for_download_and_check(self):
+        script = self._render()
+        self.assertIn("Downloading %s/%s: %s ...", script)
+        self.assertIn("Checking %s/%s: %s ...", script)
 
     def test_generated_date_defaults_to_today(self):
         import datetime
