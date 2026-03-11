@@ -16,6 +16,9 @@ Template version history:
         interactive prompt), token refresh, and 401 retry
     6 - files API path update: /files/by-file-name/{key}/plainurl
         with expires_in query parameter
+    7 - cleaner DB failure reporting with HTTP/tool context
+    8 - robust 404 handling: treat missing files as NOT FOUND IN DB,
+        avoid endpoint false positives, and preserve HTTP context
 """
 
 import json

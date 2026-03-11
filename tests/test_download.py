@@ -147,6 +147,10 @@ class TestRenderDownloadScript(unittest.TestCase):
         script = self._render()
         self.assertIn("NOT FOUND", script)
 
+    def test_no_debug_prefix_in_runtime_errors(self):
+        script = self._render()
+        self.assertNotIn("DEBUG:", script)
+
 class _FakeResponse:
     def __init__(self, payload: str):
         self._payload = payload
