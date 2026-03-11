@@ -14,6 +14,8 @@ Template version history:
     4 - self-authenticating: embed username instead of token; script
         handles login, password acquisition (-p / $OCADB_PASSWORD /
         interactive prompt), token refresh, and 401 retry
+    6 - files API path update: /files/by-file-name/{key}/plainurl
+        with expires_in query parameter
 """
 
 import json
@@ -34,7 +36,7 @@ _VERSION_MATCH = re.search(r'^# template-version:\s*(\d+)', _TEMPLATE_TEXT, re.M
 TEMPLATE_VERSION: int = int(_VERSION_MATCH.group(1)) if _VERSION_MATCH else 0
 
 # Default OCA API endpoint
-DEFAULT_API_ENDPOINT = "https://api.ocadb.space/api/v1/observations"
+DEFAULT_API_ENDPOINT = "https://api.ocadb.space/api/v1/files/by-file-name"
 DEFAULT_AUTH_ENDPOINT = "https://api.ocadb.space/api/v1/auth/plaintoken/"
 
 
@@ -110,7 +112,7 @@ def render_download_script(
                          treated as comments by the generated script.
         username:        OCADB username to embed in the script.
         api_endpoint:    Base API URL (default: OCA production endpoint).
-                         The script appends /by-filename/{key}/plainurl.
+                         The script appends /{key}/plainurl?expires_in=...
         auth_endpoint:   Authentication URL (default: OCA plaintoken endpoint).
         expires_in:      Presigned URL validity in seconds (default: 604800 = 7 days,
                          the maximum allowed by S3-compatible stores).

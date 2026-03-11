@@ -163,7 +163,7 @@ ensure_token() {
 # --- Presigned URL & download helpers ---
 
 fetch_presigned_url() {
-  # GET {API_ENDPOINT}/by-filename/{key}/plainurl?expires_in={EXPIRES_IN}
+  # GET {API_ENDPOINT}/{key}/plainurl?expires_in={EXPIRES_IN}
   # Return codes:
   #   0  success (url on stdout)
   #  44  key not found in API (404)
@@ -178,29 +178,50 @@ fetch_presigned_url() {
       -H "Authorization: Bearer $$API_TOKEN" \
       -H "Content-Type: application/json" \
       --data '' \
-      "$$API_ENDPOINT/by-filename/$$key/plainurl?expires_in=$$EXPIRES_IN" 2>/dev/null)"
+      "$$API_ENDPOINT/$$key/plainurl?expires_in=$$EXPIRES_IN" 2>/dev/null)"
     _rc=$$?
   else
     # wget doesn't give us HTTP code easily; fallback to simpler detection
     _body="$$(wget -qO- --timeout="$$DL_TIMEOUT" \
       --header="Authorization: Bearer $$API_TOKEN" \
       --header="Content-Type: application/json" \
-      "$$API_ENDPOINT/by-filename/$$key/plainurl?expires_in=$$EXPIRES_IN" 2>/dev/null)"
+      "$$API_ENDPOINT/$$key/plainurl?expires_in=$$EXPIRES_IN" 2>/dev/null)"
     _rc=$$?
   fi
 
-  [ $$_rc -eq 0 ] || return 11
+  [ $$_rc -eq 0 ] || {
+    err "DEBUG: plainurl request transport failure key='$$key' tool='$$DL_TOOL' rc=$$_rc"
+    return 11
+  }
 
   # Extract HTTP code from curl footer
   _http_code="$$(printf '%s' "$$_body" | grep '^__HTTP_CODE__:' | sed 's/^__HTTP_CODE__://')"
   _body="$$(printf '%s' "$$_body" | sed '/^__HTTP_CODE__:/d')"
 
-  [ -n "$$_body" ] || return 12
+  [ -n "$$_body" ] || {
+    err "DEBUG: plainurl empty response key='$$key' http_code='$${_http_code:-n/a}'"
+    return 12
+  }
+
+  _preview="$$(printf '%s' "$$_body" | tr '\r\n' '  ' | sed 's/[[:space:]][[:space:]]*/ /g' | cut -c1-220)"
 
   # Check HTTP status
   case "$$_http_code" in
-    401) return 41 ;;
-    404) return 44 ;;
+    401)
+      err "DEBUG: plainurl unauthorized key='$$key' http_code=401 body='$$_preview'"
+      return 41
+      ;;
+    404)
+      return 44
+      ;;
+    '')
+      ;;
+    2*)
+      ;;
+    *)
+      err "DEBUG: plainurl unexpected http key='$$key' http_code='$$_http_code' body='$$_preview'"
+      return 14
+      ;;
   esac
 
   # API detail='... not found' for unknown filenames
@@ -216,6 +237,7 @@ fetch_presigned_url() {
       ;;
   esac
 
+  err "DEBUG: plainurl invalid payload key='$$key' http_code='$${_http_code:-n/a}' body='$$_preview'"
   return 13
 }
 
@@ -227,7 +249,7 @@ fetch_presigned_url_with_retry() {
   #  45  object missing in store
   #  >0  other failure
   _key="$$1"
-  _url="$$(fetch_presigned_url "$$_key" 2>/dev/null)"
+  _url="$$(fetch_presigned_url "$$_key")"
   _rc=$$?
   if [ $$_rc -eq 0 ] && [ -n "$$_url" ]; then
     printf '%s' "$$_url"
@@ -243,7 +265,7 @@ fetch_presigned_url_with_retry() {
   fi
 
   login || return 21
-  _url="$$(fetch_presigned_url "$$_key" 2>/dev/null)"
+  _url="$$(fetch_presigned_url "$$_key")"
   _rc=$$?
   if [ $$_rc -eq 0 ] && [ -n "$$_url" ]; then
     printf '%s' "$$_url"

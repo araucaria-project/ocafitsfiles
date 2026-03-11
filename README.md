@@ -217,7 +217,7 @@ Parameters:
 
 - `data_block`: embedded table text; first whitespace-separated column is the key/filename
 - `api_token`: bearer token embedded into generated script
-- `api_endpoint`: base API URL; script calls `/by-filename/{key}/plainurl?expires_in=...`
+- `api_endpoint`: base API URL; script calls `/{key}/plainurl?expires_in=...` (default base: `https://api.ocadb.space/api/v1/files/by-file-name`)
 - `expires_in`: presigned URL validity in seconds (default `604800`)
 - `dl_timeout`: curl/wget transfer timeout in seconds (default `300`)
 

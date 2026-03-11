@@ -18,7 +18,7 @@ class TestRenderDownloadScript(unittest.TestCase):
         defaults = dict(
             data_block="file1.fits  extra\nfile2.fits  extra2",
             username="testuser",
-            api_endpoint="https://api.ocadb.space/api/v1/observations",
+            api_endpoint="https://api.ocadb.space/api/v1/files/by-file-name",
             auth_endpoint="https://api.ocadb.space/api/v1/auth/plaintoken/",
             expires_in=3600,
             dl_timeout=60,
@@ -40,12 +40,12 @@ class TestRenderDownloadScript(unittest.TestCase):
         self.assertGreaterEqual(TEMPLATE_VERSION, 6)
 
     def test_endpoint_substituted(self):
-        script = self._render(api_endpoint="https://api.ocadb.space/api/v1/observations")
-        self.assertIn('API_ENDPOINT="https://api.ocadb.space/api/v1/observations"', script)
+        script = self._render(api_endpoint="https://api.ocadb.space/api/v1/files/by-file-name")
+        self.assertIn('API_ENDPOINT="https://api.ocadb.space/api/v1/files/by-file-name"', script)
 
     def test_endpoint_trailing_slash_stripped(self):
-        script = self._render(api_endpoint="https://api.ocadb.space/api/v1/observations/")
-        self.assertIn('API_ENDPOINT="https://api.ocadb.space/api/v1/observations"', script)
+        script = self._render(api_endpoint="https://api.ocadb.space/api/v1/files/by-file-name/")
+        self.assertIn('API_ENDPOINT="https://api.ocadb.space/api/v1/files/by-file-name"', script)
 
     def test_username_substituted(self):
         script = self._render(username="observer")
@@ -102,13 +102,13 @@ class TestRenderDownloadScript(unittest.TestCase):
         self.assertIn(r'user\"name', script)
 
     def test_fetch_url_pattern(self):
-        """Generated script builds /by-filename/{key}/plainurl?expires_in= URLs."""
+        """Generated script builds /files/by-file-name/{key}/plainurl?expires_in= URLs."""
         script = self._render()
-        self.assertIn("/by-filename/", script)
+        self.assertIn("/files/by-file-name/", script)
         self.assertIn("/plainurl?expires_in=", script)
 
     def test_default_endpoint(self):
-        self.assertEqual(DEFAULT_API_ENDPOINT, "https://api.ocadb.space/api/v1/observations")
+        self.assertEqual(DEFAULT_API_ENDPOINT, "https://api.ocadb.space/api/v1/files/by-file-name")
 
     def test_no_hardcoded_token(self):
         """Template must NOT contain a hardcoded API_TOKEN assignment."""
@@ -134,7 +134,7 @@ class TestRenderDownloadScript(unittest.TestCase):
 
     def test_skipped_lines_are_printed(self):
         script = self._render()
-        self.assertIn("printf 'SKIPPED %s", script)
+        self.assertIn("printf 'Downloading %s ... SKIPPED", script)
 
     def test_generated_date_defaults_to_today(self):
         import datetime
