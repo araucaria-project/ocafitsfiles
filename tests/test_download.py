@@ -37,7 +37,7 @@ class TestRenderDownloadScript(unittest.TestCase):
 
     def test_template_version_constant(self):
         self.assertIsInstance(TEMPLATE_VERSION, int)
-        self.assertGreaterEqual(TEMPLATE_VERSION, 4)
+        self.assertGreaterEqual(TEMPLATE_VERSION, 6)
 
     def test_endpoint_substituted(self):
         script = self._render(api_endpoint="https://api.ocadb.space/api/v1/observations")
@@ -111,23 +111,30 @@ class TestRenderDownloadScript(unittest.TestCase):
         self.assertEqual(DEFAULT_API_ENDPOINT, "https://api.ocadb.space/api/v1/observations")
 
     def test_no_hardcoded_token(self):
-        """Template v4 must NOT contain a hardcoded API_TOKEN assignment."""
+        """Template must NOT contain a hardcoded API_TOKEN assignment."""
         script = self._render()
-        # API_TOKEN="" is the runtime init — that's fine.
+        # API_TOKEN="" is the runtime init - that's fine.
         # Ensure no API_TOKEN="<actual token>" appears.
         for line in script.splitlines():
             if line.startswith('API_TOKEN=') and line != 'API_TOKEN=""':
                 self.fail(f"Hardcoded token found: {line}")
 
-    def test_login_function_present(self):
+    def test_upfront_login_block_present_for_download_and_check(self):
         script = self._render()
-        self.assertIn("login()", script)
-        self.assertIn("resolve_password()", script)
-        self.assertIn("ensure_token()", script)
+        self.assertIn('if [ "$$MODE" = "check" ] || [ "$$MODE" = "download" ]; then', script)
+        self.assertIn('  ensure_tools', script)
+        self.assertIn('  resolve_password', script)
+        self.assertIn('  login || { err "ERROR: initial login failed"; exit 1; }', script)
 
-    def test_password_env_var(self):
+    def test_password_prompt_reads_from_tty(self):
         script = self._render()
-        self.assertIn("OCADB_PASSWORD", script)
+        self.assertIn('if [ ! -r /dev/tty ]; then', script)
+        self.assertIn('IFS= read -r PASSWORD < /dev/tty', script)
+        self.assertIn('stty -echo < /dev/tty 2>/dev/null', script)
+
+    def test_skipped_lines_are_printed(self):
+        script = self._render()
+        self.assertIn("printf 'SKIPPED %s", script)
 
     def test_generated_date_defaults_to_today(self):
         import datetime
@@ -139,7 +146,6 @@ class TestRenderDownloadScript(unittest.TestCase):
     def test_not_found_message_present(self):
         script = self._render()
         self.assertIn("NOT FOUND", script)
-
 
 class _FakeResponse:
     def __init__(self, payload: str):
