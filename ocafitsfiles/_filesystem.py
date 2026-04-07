@@ -94,6 +94,19 @@ def ensure_oca_julian(dt) -> int:
             raise ValueError(f'Invalid date: {dt}')
 
 
+def night_set(nights: list[int | str] | None) -> set[int] | None:
+    """Build a set of OCA night numbers from user-supplied values.
+
+    Each element is passed through :func:`ensure_oca_julian`, so the caller
+    can freely mix raw integers, string integers, and ISO dates.
+
+    Returns ``None`` when *nights* is ``None`` or empty (meaning "no filter").
+    """
+    if not nights:
+        return None
+    return {ensure_oca_julian(n) for n in nights}
+
+
 # ---------------------------------------------------------------------------
 # Filename parsing
 # ---------------------------------------------------------------------------

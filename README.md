@@ -59,7 +59,17 @@ Always use `canonical_path()` to get authoritative paths — never follow symlin
 
 ### OCA Julian Night
 
-A 4-digit integer counting days since 2023-02-23. Use `ensure_oca_julian()` to convert from ISO date.
+A 4-digit integer counting days since 2023-02-23. Use `ensure_oca_julian()` to convert from ISO date,
+or `night_set()` to build a filter set from mixed inputs:
+
+```python
+from ocafitsfiles import night_set
+
+night_set([1075, "1080", "2026-03-15"])
+# → {1075, 1080, 1136}   (set[int] ready for membership tests)
+
+night_set(None)   # → None  (meaning "no filter")
+```
 
 ### Filename Convention
 
@@ -193,7 +203,7 @@ API and handle their own input/output.
 
 - `render_download_script(...)`
 - `TEMPLATE_VERSION`
-- `DEFAULT_API_ENDPOINT` (defaults to `https://api.ocadb.space/api/v1/observations`)
+- `DEFAULT_API_ENDPOINT` (defaults to `https://api.ocadb.space/api/v1/files/by-file-name`)
 
 ### Render API
 

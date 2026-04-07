@@ -37,7 +37,7 @@ class TestRenderDownloadScript(unittest.TestCase):
 
     def test_template_version_constant(self):
         self.assertIsInstance(TEMPLATE_VERSION, int)
-        self.assertGreaterEqual(TEMPLATE_VERSION, 9)
+        self.assertGreaterEqual(TEMPLATE_VERSION, 10)
 
     def test_endpoint_substituted(self):
         script = self._render(api_endpoint="https://api.ocadb.space/api/v1/files/by-file-name")
@@ -155,6 +155,50 @@ class TestRenderDownloadScript(unittest.TestCase):
     def test_no_debug_prefix_in_runtime_errors(self):
         script = self._render()
         self.assertNotIn("DEBUG:", script)
+
+    def test_last_api_op_variable_initialized(self):
+        script = self._render()
+        self.assertIn('LAST_API_OP=""', script)
+
+    def test_last_api_op_set_in_login(self):
+        """login() must tag LAST_API_OP as AUTH."""
+        script = self._render()
+        # Find login function body and verify LAST_API_OP="AUTH" appears there
+        lines = script.splitlines()
+        in_login = False
+        found = False
+        for line in lines:
+            if "login()" in line or "login ()" in line:
+                in_login = True
+            if in_login and 'LAST_API_OP="AUTH"' in line:
+                found = True
+                break
+            # login function ends at next function or closing brace
+            if in_login and line.strip() == "}" and found is False:
+                # Reached end of login without finding it
+                break
+        self.assertTrue(found, "LAST_API_OP=\"AUTH\" not set inside login()")
+
+    def test_last_api_op_set_in_fetch_presigned(self):
+        """fetch_presigned_url() must tag LAST_API_OP as API."""
+        script = self._render()
+        lines = script.splitlines()
+        in_fetch = False
+        found = False
+        for line in lines:
+            if "fetch_presigned_url()" in line or "fetch_presigned_url ()" in line:
+                in_fetch = True
+            if in_fetch and 'LAST_API_OP="API"' in line:
+                found = True
+                break
+            if in_fetch and line.strip() == "}" and found is False:
+                break
+        self.assertTrue(found, "LAST_API_OP=\"API\" not set inside fetch_presigned_url()")
+
+    def test_error_messages_include_last_api_op(self):
+        """Error messages should include the LAST_API_OP variable."""
+        script = self._render()
+        self.assertIn("${LAST_API_OP}:", script)
 
 class _FakeResponse:
     def __init__(self, payload: str):
