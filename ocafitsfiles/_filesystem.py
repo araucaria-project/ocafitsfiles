@@ -261,6 +261,8 @@ def iter_calib_files(
 
     for f in chain(pdir.glob('*.fits'), pdir.glob('*.fz')):
         fb, fs = parse_filename(f.name)
+        if fb is None:  # non-OCA file (e.g. shutter map)
+            continue
         if fb == basename and fs == suffix:  # skip self
             continue
 

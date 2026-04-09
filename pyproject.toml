@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ocafitsfiles"
-version = "1.2.0"
+version = "1.2.1"
 description = "Python library for working with OCA FITS file system structure"
 readme = "README.md"
 requires-python = ">=3.10"
