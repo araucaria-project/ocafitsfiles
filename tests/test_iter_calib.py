@@ -54,6 +54,30 @@ class TestIterCalibUnparseableFile(unittest.TestCase):
                 self.assertIsNotNone(fb)
 
 
+class TestIterCalibRawSuffixNone(unittest.TestCase):
+    """Raw files (suffix=None) must never inherit the ZDF's calibration set."""
+
+    def _make_tree(self, tmp: Path) -> Path:
+        """Build a processed-ofp science dir populated as if ZDF already ran."""
+        root = tmp
+        sci_dir = root / "jk15" / "processed-ofp" / "science" / "1091" / "jk15c_1091_58100"
+        sci_dir.mkdir(parents=True)
+        (sci_dir / "jk15c_1091_58100_zdf.fits").touch()
+        (sci_dir / "jk15c_1091_52446_master_z.fits").touch()
+        return root
+
+    def test_raw_suffix_returns_no_calib_files(self):
+        """A raw-only observation must get an empty result, not the ZDF's masters."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._make_tree(Path(tmp))
+            results = iter_calib_files(
+                "jk15c_1091_58100", None, root,
+                master_zero=True, master_dark=True, master_flat=True,
+                raw_zero=True, raw_dark=True, raw_flat=True,
+            )
+            self.assertEqual(results, [])
+
+
 class TestIterCalibNoneBasenameRegression(unittest.TestCase):
     """Directly verify that parse_filename returning None doesn't propagate."""
 
