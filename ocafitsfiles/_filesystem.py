@@ -253,8 +253,15 @@ def iter_calib_files(
         master_zero  → enter if: raw_zero requested
         master_dark  → enter if: master_zero, raw_zero, or raw_dark requested
         master_flat  → enter if: master_dark, master_zero, raw_zero, raw_dark, or raw_flat requested
+
+    Raw files (suffix=None) have no calibration dependencies of their own and
+    always return an empty list — processed_dir(basename, None, root) falls
+    back to the ZDF's science directory, which would otherwise leak that
+    observation's calibration set onto the raw file.
     """
     results = []
+    if suffix is None:
+        return results
     pdir = processed_dir(basename, suffix, root)
     if pdir is None or not pdir.is_dir():
         return results
